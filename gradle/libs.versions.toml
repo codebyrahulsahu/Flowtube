@@ -50,7 +50,9 @@ zxingCore = "3.5.4"
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-core-splashscreen = { group = "androidx.core", name = "core-splashscreen", version.ref = "core-splashscreen" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
-# Alpha BOM: pins material3 1.5.0-alpha26 (M3 Expressive) + compose 1.13.0-alpha01 consistently.
+# Alpha BOM: pins the whole Compose + Material3 (M3 Expressive) set consistently.
+# 2026.08.01 resolves androidx.compose.material3:material3 to 1.5.0-alpha27,
+# where the toggle-button colour factories were renamed to ToggleButtonDefaults.colors().
 androidx-compose-bom = { group = "androidx.compose", name = "compose-bom-alpha", version.ref = "composeBom" }
 androidx-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
