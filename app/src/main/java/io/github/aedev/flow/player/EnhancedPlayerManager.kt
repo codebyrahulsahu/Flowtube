@@ -2923,7 +2923,16 @@ class EnhancedPlayerManager private constructor() {
         player?.stop()
         player?.clearMediaItems()
         lastRenderedFrameVideoId = null
-        val loaded = loadMediaInternal(currentVideoStream, currentAudioStream, position)
+        // Pass the local file path through: prepareMediaSource treats a null localFilePath as a
+        // YouTube load and returns false for local media (no InnerTube/SABR state), which would
+        // otherwise leave the player stopped and cleared instead of recovered.
+        val loaded =
+            loadMediaInternal(
+                currentVideoStream,
+                currentAudioStream,
+                position,
+                localFilePath = currentLocalFilePath,
+            )
         if (loaded) {
             player?.playWhenReady = shouldPlay
         }
