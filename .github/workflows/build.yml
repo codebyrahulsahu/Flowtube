@@ -54,33 +54,37 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      # TEMPORARY DIAGNOSTIC (to be removed before merge): identify why
-      # release/nightly Kotlin compiles fail to resolve Material3
-      # 'toggleButtonColors' while debug compiles pass.
-      - name: Diagnose material3 dependency resolution
-        run: |
-          ./gradlew :app:dependencyInsight --dependency androidx.compose.material3:material3 \
-            --configuration githubReleaseCompileClasspath 2>&1 | tee /tmp/ci-deps-release.log || true
-          ./gradlew :app:dependencyInsight --dependency androidx.compose.material3:material3 \
-            --configuration githubDebugCompileClasspath 2>&1 | tee /tmp/ci-deps-debug.log || true
-
+      # Every Gradle step below pipes its output into `tee`, so it needs
+      # `set -o pipefail` plus an explicit `|| rc=$?`: without them the step
+      # reports the exit status of `tee` (always 0) and a broken build walks
+      # through CI unnoticed, failing later on a missing APK instead.
       - name: Check Kotlin formatting
         run: |
+          set -o pipefail
           attempt=1
           while true; do
             echo "=== attempt $attempt ==="
-          ./gradlew spotlessCheck --build-cache --stacktrace 2>&1 | tee /tmp/ci-spotless.log && exit 0
-            rc=$?
-            if [ $rc -ne 0 ] && grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-spotless.log; then
-              attempt=$((attempt + 1))
-              if [ $attempt -le 3 ]; then
-                wait_secs=$((attempt * 45))
-                echo "Transient network/dependency failure (exit $rc); retrying in ${wait_secs}s..."
-                sleep $wait_secs
-                continue
-              fi
+            rc=0
+            ./gradlew spotlessCheck --build-cache --stacktrace 2>&1 | tee /tmp/ci-spotless.log || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              exit 0
             fi
-            exit $rc
+            if grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-spotless.log && [ "$attempt" -lt 3 ]; then
+              attempt=$((attempt + 1))
+              echo "Transient network/dependency failure (exit $rc); retrying in $((attempt * 45))s..."
+              sleep $((attempt * 45))
+              continue
+            fi
+            # spotlessCheck only says "these files had violations". Re-run the
+            # formatter and capture the diff it wanted, so the failure comment
+            # names the exact lines instead of just the file list.
+            ./gradlew spotlessApply --build-cache > /tmp/ci-spotless-apply.log 2>&1 || true
+            {
+              echo "### what spotlessApply wanted to change"
+              git --no-pager diff --stat
+              git --no-pager diff
+            } > /tmp/ci-spotless-diff.log 2>&1 || true
+            exit "$rc"
           done
 
       - name: Decode Keystore
@@ -105,100 +109,109 @@ jobs:
 
       - name: Run unit tests
         run: |
+          set -o pipefail
           attempt=1
           while true; do
             echo "=== attempt $attempt ==="
-            if ./gradlew :app:testGithubDebugUnitTest :app:testFossDebugUnitTest \
-              --parallel --build-cache --stacktrace 2>&1 | tee /tmp/ci-unit-tests.log; then
+            rc=0
+            ./gradlew :app:testGithubDebugUnitTest :app:testFossDebugUnitTest \
+              --parallel --build-cache --stacktrace 2>&1 | tee /tmp/ci-unit-tests.log || rc=$?
+            if [ "$rc" -eq 0 ]; then
               exit 0
             fi
-            rc=$?
-            if grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-unit-tests.log && [ $attempt -lt 3 ]; then
+            if grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-unit-tests.log && [ "$attempt" -lt 3 ]; then
               attempt=$((attempt + 1))
+              echo "Transient network/dependency failure (exit $rc); retrying in $((attempt * 45))s..."
               sleep $((attempt * 45))
               continue
             fi
-            exit $rc
+            exit "$rc"
           done
 
       # Instrumentation tests are not executed in CI, but they must still
       # compile: breakage here otherwise lands on main unnoticed.
       - name: Compile instrumentation tests
         run: |
+          set -o pipefail
           attempt=1
           while true; do
             echo "=== attempt $attempt ==="
-          ./gradlew :app:compileGithubDebugAndroidTestKotlin --build-cache --stacktrace 2>&1 | tee /tmp/ci-androidtest-compile.log && exit 0
-            rc=$?
-            if [ $rc -ne 0 ] && grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-androidtest-compile.log; then
-              attempt=$((attempt + 1))
-              if [ $attempt -le 3 ]; then
-                wait_secs=$((attempt * 45))
-                echo "Transient network/dependency failure (exit $rc); retrying in ${wait_secs}s..."
-                sleep $wait_secs
-                continue
-              fi
+            rc=0
+            ./gradlew :app:compileGithubDebugAndroidTestKotlin --build-cache --stacktrace 2>&1 | tee /tmp/ci-androidtest-compile.log || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              exit 0
             fi
-            exit $rc
+            if grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-androidtest-compile.log && [ "$attempt" -lt 3 ]; then
+              attempt=$((attempt + 1))
+              echo "Transient network/dependency failure (exit $rc); retrying in $((attempt * 45))s..."
+              sleep $((attempt * 45))
+              continue
+            fi
+            exit "$rc"
           done
 
       - name: Lint GitHub nightly
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: |
+          set -o pipefail
           attempt=1
           while true; do
             echo "=== attempt $attempt ==="
-          ./gradlew :app:lintGithubNightly --build-cache --stacktrace 2>&1 | tee /tmp/ci-lint.log && exit 0
-            rc=$?
-            if [ $rc -ne 0 ] && grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-lint.log; then
-              attempt=$((attempt + 1))
-              if [ $attempt -le 3 ]; then
-                wait_secs=$((attempt * 45))
-                echo "Transient network/dependency failure (exit $rc); retrying in ${wait_secs}s..."
-                sleep $wait_secs
-                continue
-              fi
+            rc=0
+            ./gradlew :app:lintGithubNightly --build-cache --stacktrace 2>&1 | tee /tmp/ci-lint.log || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              exit 0
             fi
-            exit $rc
+            if grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-lint.log && [ "$attempt" -lt 3 ]; then
+              attempt=$((attempt + 1))
+              echo "Transient network/dependency failure (exit $rc); retrying in $((attempt * 45))s..."
+              sleep $((attempt * 45))
+              continue
+            fi
+            exit "$rc"
           done
 
       - name: Lint GitHub release
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
+          set -o pipefail
           attempt=1
           while true; do
             echo "=== attempt $attempt ==="
-          ./gradlew :app:lintGithubRelease --build-cache --stacktrace 2>&1 | tee /tmp/ci-lint.log && exit 0
-            rc=$?
-            if [ $rc -ne 0 ] && grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-lint.log; then
-              attempt=$((attempt + 1))
-              if [ $attempt -le 3 ]; then
-                wait_secs=$((attempt * 45))
-                echo "Transient network/dependency failure (exit $rc); retrying in ${wait_secs}s..."
-                sleep $wait_secs
-                continue
-              fi
+            rc=0
+            ./gradlew :app:lintGithubRelease --build-cache --stacktrace 2>&1 | tee /tmp/ci-lint.log || rc=$?
+            if [ "$rc" -eq 0 ]; then
+              exit 0
             fi
-            exit $rc
+            if grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-lint.log && [ "$attempt" -lt 3 ]; then
+              attempt=$((attempt + 1))
+              echo "Transient network/dependency failure (exit $rc); retrying in $((attempt * 45))s..."
+              sleep $((attempt * 45))
+              continue
+            fi
+            exit "$rc"
           done
 
       - name: Build CI APKs
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: |
+          set -o pipefail
           attempt=1
           while true; do
             echo "=== attempt $attempt ==="
-            if ./gradlew :app:assembleGithubRelease :app:assembleGithubNightly :app:assembleFossRelease \
-              --parallel --build-cache --stacktrace 2>&1 | tee /tmp/ci-assemble.log; then
+            rc=0
+            ./gradlew :app:assembleGithubRelease :app:assembleGithubNightly :app:assembleFossRelease \
+              --parallel --build-cache --stacktrace 2>&1 | tee /tmp/ci-assemble.log || rc=$?
+            if [ "$rc" -eq 0 ]; then
               exit 0
             fi
-            rc=$?
-            if grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-assemble.log && [ $attempt -lt 3 ]; then
+            if grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-assemble.log && [ "$attempt" -lt 3 ]; then
               attempt=$((attempt + 1))
+              echo "Transient network/dependency failure (exit $rc); retrying in $((attempt * 45))s..."
               sleep $((attempt * 45))
               continue
             fi
-            exit $rc
+            exit "$rc"
           done
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
@@ -208,20 +221,23 @@ jobs:
       - name: Build release APKs
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
         run: |
+          set -o pipefail
           attempt=1
           while true; do
             echo "=== attempt $attempt ==="
-            if ./gradlew :app:assembleGithubRelease :app:assembleFossRelease \
-              --parallel --build-cache --stacktrace 2>&1 | tee /tmp/ci-assemble.log; then
+            rc=0
+            ./gradlew :app:assembleGithubRelease :app:assembleFossRelease \
+              --parallel --build-cache --stacktrace 2>&1 | tee /tmp/ci-assemble.log || rc=$?
+            if [ "$rc" -eq 0 ]; then
               exit 0
             fi
-            rc=$?
-            if grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-assemble.log && [ $attempt -lt 3 ]; then
+            if grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-assemble.log && [ "$attempt" -lt 3 ]; then
               attempt=$((attempt + 1))
+              echo "Transient network/dependency failure (exit $rc); retrying in $((attempt * 45))s..."
               sleep $((attempt * 45))
               continue
             fi
-            exit $rc
+            exit "$rc"
           done
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
@@ -269,8 +285,14 @@ jobs:
       - name: Checksum nightly APK
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         run: |
-          test -f app/build/outputs/apk/github/nightly/app-github-universal-nightly.apk
-          sha256sum app/build/outputs/apk/github/nightly/app-github-universal-nightly.apk | tee app/build/outputs/apk/github/nightly/app-github-universal-nightly.apk.sha256
+          set -euo pipefail
+          apk=app/build/outputs/apk/github/nightly/app-github-universal-nightly.apk
+          if [ ! -f "$apk" ]; then
+            echo "::error::Nightly universal APK not found at $apk"
+            find app/build/outputs/apk -type f -name '*.apk' -printf 'found: %p\n' 2>/dev/null | sort
+            exit 1
+          fi
+          sha256sum "$apk" | tee "$apk.sha256"
 
       - name: Report individual APK sizes
         shell: bash
@@ -328,12 +350,21 @@ jobs:
             echo '#### Error highlights'
             echo
             for lf in $(ls -t /tmp/ci-*.log 2>/dev/null); do
+              case "$(basename "$lf")" in ci-spotless-diff.log) continue ;; esac
               echo "== $(basename "$lf") =="
               echo '```'
               grep -inE '^(e|error|warning): |> Task .*FAILED|FAILED$|Caused by|Execution failed|What went wrong|material3:1\.|compose-bom' "$lf" | grep -vE 'at (org|java|jdk)\.' | tail -40
               echo '```'
               echo
             done
+            if [ -s /tmp/ci-spotless-diff.log ]; then
+              echo '#### What the Kotlin formatter wanted to change'
+              echo
+              echo '```diff'
+              head -c 24000 /tmp/ci-spotless-diff.log
+              echo '```'
+              echo
+            fi
             echo '<details><summary>Log tail</summary>'
             echo
             echo '```'

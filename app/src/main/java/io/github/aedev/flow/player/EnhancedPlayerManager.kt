@@ -2843,8 +2843,7 @@ class EnhancedPlayerManager private constructor() {
 
     // ===== Black-Screen Watchdog =====
 
-    private fun hasRenderedCurrentFrame(): Boolean =
-        currentVideoId != null && lastRenderedFrameVideoId == currentVideoId
+    private fun hasRenderedCurrentFrame(): Boolean = currentVideoId != null && lastRenderedFrameVideoId == currentVideoId
 
     /** Whether the current item is expected to produce video at all (audio-only content won't). */
     private fun hasExpectedVideoOutput(): Boolean =
@@ -2859,8 +2858,7 @@ class EnhancedPlayerManager private constructor() {
      * proves a video-capable source is loaded — audio-only HLS/DASH/local media would otherwise
      * be mistaken for a black screen and get needlessly reattached/refreshed.
      */
-    private fun hasSelectedVideoTrack(): Boolean =
-        player?.currentTracks?.groups?.any { it.type == C.TRACK_TYPE_VIDEO } == true
+    private fun hasSelectedVideoTrack(): Boolean = player?.currentTracks?.groups?.any { it.type == C.TRACK_TYPE_VIDEO } == true
 
     /**
      * Advance the black-screen watchdog by one step. Polled at a low frequency by
@@ -2881,8 +2879,14 @@ class EnhancedPlayerManager private constructor() {
                 audioOnly = audioOnlyMode.isActive || audioOnlyMode.tracksDisabled,
             )
         when (action) {
-            BlackScreenRecoveryPolicy.Action.REATTACH_SURFACE -> recoverBlackScreenByReattachingSurface()
-            BlackScreenRecoveryPolicy.Action.REFRESH_STREAM -> recoverBlackScreenByRefreshingStream()
+            BlackScreenRecoveryPolicy.Action.REATTACH_SURFACE -> {
+                recoverBlackScreenByReattachingSurface()
+            }
+
+            BlackScreenRecoveryPolicy.Action.REFRESH_STREAM -> {
+                recoverBlackScreenByRefreshingStream()
+            }
+
             BlackScreenRecoveryPolicy.Action.GIVE_UP -> {
                 Log.w(TAG, "Black-screen recovery exhausted for $currentVideoId — leaving error paths in charge")
                 PlayerDiagnostics.logWarning(TAG, "Black-screen recovery gave up video=$currentVideoId")
@@ -2892,7 +2896,9 @@ class EnhancedPlayerManager private constructor() {
                 // (resetPlaybackStateForNewVideo / stop / clearCurrentVideo).
             }
 
-            BlackScreenRecoveryPolicy.Action.NONE -> Unit
+            BlackScreenRecoveryPolicy.Action.NONE -> {
+                Unit
+            }
         }
         return action
     }
