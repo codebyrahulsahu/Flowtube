@@ -1037,6 +1037,11 @@ class VideoPlayerViewModel
             playbackAbandonedVideoId = null
             streamExpiryVideoId = null
             streamExpiryCount = 0
+            // A retry is the user explicitly overriding a previous give-up: drop the video's
+            // poisoned-unplayable mark (and the manager's expiry limiter) so the fresh attempt is
+            // not gated by the failure that already ran its course.
+            clearedUnplayableVideoId = null
+            viewModelScope.launch { playerPreferences.clearVideoUnplayable(videoId) }
             EnhancedPlayerManager.getInstance().clearCurrentVideo()
             _uiState.update { it.copy(error = null, errorHint = null, isLoading = true) }
             loadVideoInfo(videoId, isWifi = detectIsWifi(), forceRefresh = true)

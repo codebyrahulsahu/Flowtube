@@ -1003,7 +1003,7 @@ class PlayerPreferences(
     val defaultQualityWifi: Flow<VideoQuality> =
         context.playerPreferencesDataStore.data
             .map { preferences ->
-                VideoQuality.fromString(preferences[Keys.DEFAULT_QUALITY_WIFI] ?: "1080p")
+                VideoQuality.fromString(preferences[Keys.DEFAULT_QUALITY_WIFI] ?: VideoQuality.AUTO.label)
             }
 
     val defaultQualityCellular: Flow<VideoQuality> =
@@ -2244,11 +2244,13 @@ class PlayerPreferences(
     }
 
     // Buffer Preferences - Optimized for fast startup while maintaining stability
-    // These are the defaults that balance quick playback start with smooth streaming
+    // The defaults favor a quick first frame (Fast Start profile): a small buffer-for-playback
+    // lets playback begin almost immediately instead of waiting out a large preload, which is
+    // what made the first video of a session feel slow.
     val minBufferMs: Flow<Int> =
         context.playerPreferencesDataStore.data
             .map { preferences ->
-                preferences[Keys.MIN_BUFFER_MS] ?: BufferProfile.STABLE.minBuffer
+                preferences[Keys.MIN_BUFFER_MS] ?: BufferProfile.AGGRESSIVE.minBuffer
             }
 
     suspend fun setMinBufferMs(ms: Int) {
@@ -2260,7 +2262,7 @@ class PlayerPreferences(
     val maxBufferMs: Flow<Int> =
         context.playerPreferencesDataStore.data
             .map { preferences ->
-                preferences[Keys.MAX_BUFFER_MS] ?: BufferProfile.STABLE.maxBuffer
+                preferences[Keys.MAX_BUFFER_MS] ?: BufferProfile.AGGRESSIVE.maxBuffer
             }
 
     suspend fun setMaxBufferMs(ms: Int) {
@@ -2272,7 +2274,7 @@ class PlayerPreferences(
     val bufferForPlaybackMs: Flow<Int> =
         context.playerPreferencesDataStore.data
             .map { preferences ->
-                preferences[Keys.BUFFER_FOR_PLAYBACK_MS] ?: BufferProfile.STABLE.playbackBuffer
+                preferences[Keys.BUFFER_FOR_PLAYBACK_MS] ?: BufferProfile.AGGRESSIVE.playbackBuffer
             }
 
     suspend fun setBufferForPlaybackMs(ms: Int) {
@@ -2284,7 +2286,7 @@ class PlayerPreferences(
     val bufferForPlaybackAfterRebufferMs: Flow<Int> =
         context.playerPreferencesDataStore.data
             .map { preferences ->
-                preferences[Keys.BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS] ?: BufferProfile.STABLE.rebufferBuffer
+                preferences[Keys.BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS] ?: BufferProfile.AGGRESSIVE.rebufferBuffer
             }
 
     suspend fun setBufferForPlaybackAfterRebufferMs(ms: Int) {
@@ -2296,7 +2298,7 @@ class PlayerPreferences(
     val bufferProfile: Flow<BufferProfile> =
         context.playerPreferencesDataStore.data
             .map { preferences ->
-                BufferProfile.fromString(preferences[Keys.BUFFER_PROFILE] ?: "STABLE")
+                BufferProfile.fromString(preferences[Keys.BUFFER_PROFILE] ?: BufferProfile.AGGRESSIVE.name)
             }
 
     suspend fun setBufferProfile(profile: BufferProfile) {

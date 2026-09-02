@@ -48,6 +48,7 @@ private const val LIVE_DISPLAY_MAX_TICK_MS = 1_000L
 private const val LIVE_DISPLAY_RECENT_SEEK_MS = 2_000L
 private const val STARTUP_RECOVERY_DELAY_MS = 5_000L
 private const val STARTUP_BUFFERING_GRACE_MS = 4_000L
+private const val BLACK_SCREEN_WATCHDOG_INTERVAL_MS = 1_000L
 private const val ACTIVE_POSITION_TRACKING_INTERVAL_MS = 250L
 private const val IDLE_POSITION_TRACKING_INTERVAL_MS = 1_000L
 private const val AUTO_HIDE_CONTROLS_DELAY_MS = 3_000L
@@ -800,6 +801,27 @@ fun PlaybackStartupRecoveryEffect(
                     "activeBuffering=${snapshot.isActivelyBuffering})",
             )
             viewModel.retryLoadVideo()
+        }
+    }
+}
+
+/**
+ * Polls the player's black-screen watchdog while playback is expected to be running.
+ *
+ * A black screen (READY + playing but no rendered frame) has no ExoPlayer error to latch onto, so
+ * it needs a slow poll rather than an event. The interval is deliberately coarse — the watchdog's
+ * escalation grace windows run to several seconds, so a 1 s tick adds no recovery latency while
+ * costing a negligible wakeup. The escalation itself (surface reattach, then stream refresh) lives
+ * in [EnhancedPlayerManager.evaluateBlackScreenRecovery], driven by a pure, unit-tested policy.
+ */
+@Composable
+fun BlackScreenRecoveryEffect(isPlaying: Boolean) {
+    LaunchedEffect(isPlaying) {
+        if (!isPlaying) return@LaunchedEffect
+        val manager = EnhancedPlayerManager.getInstance()
+        while (true) {
+            manager.evaluateBlackScreenRecovery()
+            delay(BLACK_SCREEN_WATCHDOG_INTERVAL_MS)
         }
     }
 }
