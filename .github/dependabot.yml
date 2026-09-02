@@ -34,8 +34,17 @@ updates:
       - dependency-name: "com.android.tools.build:gradle"
       - dependency-name: "org.jetbrains.kotlin:kotlin-gradle-plugin"
 
-  # NOTE: no github-actions ecosystem entry. Dependabot aborts that update
-  # ("Error during file fetching; aborting: /action.yml or
-  # /.github/workflows/<anything>.yml not found") because this repository does
-  # not currently ship any .github/workflows files. Re-add a github-actions
-  # entry once CI workflows exist under .github/workflows.
+  # Keep the GitHub Actions used by CI current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"

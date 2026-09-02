@@ -21,10 +21,11 @@ plugins {
 }
 
 spotless {
-    // Adopt formatting incrementally from this fork's import baseline commit
-    // (current main history begins there; upstream Flow's 52c4928e… does not
-    // exist in this repository and made spotlessCheck fail at ratchet lookup).
-    ratchetFrom("0c252f1d8e470f3b82a748f3803fae39966a4a3c")
+    // Adopt formatting incrementally from the root commit of this repository's
+    // history. The previously configured baseline (0c252f1…, like upstream
+    // Flow's 52c4928e… before it) is not an object in this repository, so
+    // spotlessCheck aborted at ratchet lookup before doing any work.
+    ratchetFrom("58f099a3d3e5bb50c1841b358fb3c6776894f670")
     lineEndings = LineEnding.UNIX
 
     val ktlintConfig =
