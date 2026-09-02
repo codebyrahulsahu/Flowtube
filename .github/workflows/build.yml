@@ -327,10 +327,13 @@ jobs:
             echo
             echo '#### Error highlights'
             echo
-            echo '```'
-            grep -inE '^(e|error|warning): |FAILED$|FAILED$|> Task .*FAILED|Caused by|Execution failed|What went wrong' "$f" | grep -vE 'at (org|java|jdk)\.' | tail -60
-            echo '```'
-            echo
+            for lf in $(ls -t /tmp/ci-*.log 2>/dev/null); do
+              echo "== $(basename "$lf") =="
+              echo '```'
+              grep -inE '^(e|error|warning): |> Task .*FAILED|FAILED$|Caused by|Execution failed|What went wrong|material3:1\.|compose-bom' "$lf" | grep -vE 'at (org|java|jdk)\.' | tail -40
+              echo '```'
+              echo
+            done
             echo '<details><summary>Log tail</summary>'
             echo
             echo '```'
