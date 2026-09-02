@@ -54,6 +54,16 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
+      # TEMPORARY DIAGNOSTIC (to be removed before merge): identify why
+      # release/nightly Kotlin compiles fail to resolve Material3
+      # 'toggleButtonColors' while debug compiles pass.
+      - name: Diagnose material3 dependency resolution
+        run: |
+          ./gradlew :app:dependencyInsight --dependency androidx.compose.material3:material3 \
+            --configuration githubReleaseCompileClasspath 2>&1 | tee /tmp/ci-deps-release.log || true
+          ./gradlew :app:dependencyInsight --dependency androidx.compose.material3:material3 \
+            --configuration githubDebugCompileClasspath 2>&1 | tee /tmp/ci-deps-debug.log || true
+
       - name: Check Kotlin formatting
         run: |
           attempt=1
