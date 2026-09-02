@@ -155,4 +155,28 @@ class BlackScreenRecoveryPolicyTest {
             p.evaluate("v1", Player.STATE_READY, true, false, false),
         ).isEqualTo(BlackScreenRecoveryPolicy.Action.NONE)
     }
+
+    @Test
+    fun `give up stays terminal for the same video across repeated polls`() {
+        val clock = ManualClock()
+        val p = policy(clock)
+
+        var action = BlackScreenRecoveryPolicy.Action.NONE
+        var ticks = 0
+        while (action != BlackScreenRecoveryPolicy.Action.GIVE_UP && ticks < 100) {
+            clock.now += 500L
+            action = p.evaluate("v1", Player.STATE_READY, true, false, false)
+            ticks++
+        }
+        assertThat(action).isEqualTo(BlackScreenRecoveryPolicy.Action.GIVE_UP)
+
+        // A give-up must never re-arm for the same media item: calling evaluate in a loop (as the
+        // watchdog poll does) has to keep returning NONE, otherwise recovery would restart forever.
+        repeat(200) {
+            clock.now += 1_000L
+            assertThat(
+                p.evaluate("v1", Player.STATE_READY, true, false, false),
+            ).isEqualTo(BlackScreenRecoveryPolicy.Action.NONE)
+        }
+    }
 }
