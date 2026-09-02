@@ -112,11 +112,20 @@ jobs:
           f=$(ls -t /tmp/ci-*.log 2>/dev/null | head -1 || true)
           [ -z "${f:-}" ] && exit 0
           {
-            echo "### CodeQL CI failure: log tail"
+            echo "### CodeQL CI failure"
+            echo
+            echo '#### Error highlights'
             echo
             echo '```'
-            tail -n 150 "$f"
+            grep -inE '^(e|error|warning): |> Task .*FAILED|Caused by|Execution failed' "$f" | grep -vE 'at (org|java|jdk)\.' | tail -60
             echo '```'
+            echo
+            echo '<details><summary>Log tail</summary>'
+            echo
+            echo '```'
+            tail -n 200 "$f"
+            echo '```'
+            echo '</details>'
           } > /tmp/ci-comment.md
           if [ "$(wc -c < /tmp/ci-comment.md)" -gt 65000 ]; then
             { echo "### CodeQL CI failure: log tail (truncated)"; echo; echo '```'; tail -c 60000 "$f"; echo '```'; } > /tmp/ci-comment.md
