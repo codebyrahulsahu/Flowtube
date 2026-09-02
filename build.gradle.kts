@@ -21,8 +21,10 @@ plugins {
 }
 
 spotless {
-    // Adopt formatting incrementally from the main commit that introduced linting.
-    ratchetFrom("52c4928e5af05141080f46f6c1e41cbf9c457023")
+    // Adopt formatting incrementally from this fork's import baseline commit
+    // (current main history begins there; upstream Flow's 52c4928e… does not
+    // exist in this repository and made spotlessCheck fail at ratchet lookup).
+    ratchetFrom("0c252f1d8e470f3b82a748f3803fae39966a4a3c")
     lineEndings = LineEnding.UNIX
 
     val ktlintConfig =
