@@ -30,6 +30,10 @@ jobs:
     name: Build APK
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: read
+      # Lets the failure-report step comment the failing log tail on the PR.
+      pull-requests: write
 
     steps:
       - name: Checkout code
@@ -51,9 +55,8 @@ jobs:
         run: chmod +x gradlew
 
       - name: Check Kotlin formatting
-        run: >
-          ./gradlew spotlessCheck
-          --build-cache --stacktrace
+        run: |
+          ./gradlew spotlessCheck --build-cache --stacktrace 2>&1 | tee /tmp/ci-spotless.log
 
       - name: Decode Keystore
         id: keystore
@@ -76,34 +79,31 @@ jobs:
           fi
 
       - name: Run unit tests
-        run: >
-          ./gradlew :app:testGithubDebugUnitTest :app:testFossDebugUnitTest
-          --parallel --build-cache --stacktrace
+        run: |
+          ./gradlew :app:testGithubDebugUnitTest :app:testFossDebugUnitTest \
+            --parallel --build-cache --stacktrace 2>&1 | tee /tmp/ci-unit-tests.log
 
       # Instrumentation tests are not executed in CI, but they must still
       # compile: breakage here otherwise lands on main unnoticed.
       - name: Compile instrumentation tests
-        run: >
-          ./gradlew :app:compileGithubDebugAndroidTestKotlin
-          --build-cache --stacktrace
+        run: |
+          ./gradlew :app:compileGithubDebugAndroidTestKotlin --build-cache --stacktrace 2>&1 | tee /tmp/ci-androidtest-compile.log
 
       - name: Lint GitHub nightly
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: >
-          ./gradlew :app:lintGithubNightly
-          --build-cache --stacktrace
+        run: |
+          ./gradlew :app:lintGithubNightly --build-cache --stacktrace 2>&1 | tee /tmp/ci-lint.log
 
       - name: Lint GitHub release
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: >
-          ./gradlew :app:lintGithubRelease
-          --build-cache --stacktrace
+        run: |
+          ./gradlew :app:lintGithubRelease --build-cache --stacktrace 2>&1 | tee /tmp/ci-lint.log
 
       - name: Build CI APKs
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        run: >
-          ./gradlew :app:assembleGithubRelease :app:assembleGithubNightly :app:assembleFossRelease
-          --parallel --build-cache --stacktrace
+        run: |
+          ./gradlew :app:assembleGithubRelease :app:assembleGithubNightly :app:assembleFossRelease \
+            --parallel --build-cache --stacktrace 2>&1 | tee /tmp/ci-assemble.log
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -111,9 +111,9 @@ jobs:
 
       - name: Build release APKs
         if: ${{ startsWith(github.ref, 'refs/tags/v') }}
-        run: >
-          ./gradlew :app:assembleGithubRelease :app:assembleFossRelease
-          --parallel --build-cache --stacktrace
+        run: |
+          ./gradlew :app:assembleGithubRelease :app:assembleFossRelease \
+            --parallel --build-cache --stacktrace 2>&1 | tee /tmp/ci-assemble.log
         env:
           STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -195,6 +195,48 @@ jobs:
             echo
             echo '> GitHub and FOSS APKs are uploaded individually without compression. Nightly remains a compressed artifact on regular CI runs.'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Log bridge for log-restricted environments: when any Gradle step
+      # fails, post the tail of the most recently written captured log to the
+      # PR (or the step summary outside PRs) so the failure is diagnosable
+      # without access to the Actions log CDN. No-op on success.
+      - name: Report failure details
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          f=$(ls -t /tmp/ci-*.log 2>/dev/null | head -1 || true)
+          if [ -z "${f:-}" ]; then
+            echo "No captured Gradle log found."
+            exit 0
+          fi
+          {
+            echo "### CI failure: log tail of \`$(basename "$f")\`"
+            echo
+            echo "Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo
+            echo '```'
+            tail -n 150 "$f"
+            echo '```'
+          } > /tmp/ci-comment.md
+          if [ "$(wc -c < /tmp/ci-comment.md)" -gt 65000 ]; then
+            {
+              echo "### CI failure: log tail of \`$(basename "$f")\` (truncated)"
+              echo
+              echo '```'
+              tail -c 60000 "$f"
+              echo '```'
+            } > /tmp/ci-comment.md
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            pr_number=$(jq -r '.pull_request.number // empty' "$GITHUB_EVENT_PATH")
+            if [ -n "$pr_number" ]; then
+              gh pr comment "$pr_number" --body-file /tmp/ci-comment.md || true
+              exit 0
+            fi
+          fi
+          cat /tmp/ci-comment.md >> "$GITHUB_STEP_SUMMARY" || true
 
       # The universal APKs are what release downloads link to.
       - name: Upload GitHub universal APK
