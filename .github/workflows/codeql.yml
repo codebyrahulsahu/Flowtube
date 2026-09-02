@@ -75,7 +75,22 @@ jobs:
 
       - name: Build for extraction
         run: |
-          ./gradlew :app:assembleGithubDebug --no-build-cache --stacktrace 2>&1 | tee /tmp/ci-assemble.log
+          attempt=1
+          while true; do
+            echo "=== attempt $attempt ==="
+          ./gradlew :app:assembleGithubDebug --no-build-cache --stacktrace 2>&1 | tee /tmp/ci-assemble.log && exit 0
+            rc=$?
+            if [ $rc -ne 0 ] && grep -qiE 'status code 429|Too Many Requests|Read timed out|Connection reset' /tmp/ci-assemble.log; then
+              attempt=$((attempt + 1))
+              if [ $attempt -le 3 ]; then
+                wait_secs=$((attempt * 45))
+                echo "Transient network/dependency failure (exit $rc); retrying in ${wait_secs}s..."
+                sleep $wait_secs
+                continue
+              fi
+            fi
+            exit $rc
+          done
 
       # The Gradle and Kotlin compile daemons stay resident after the build.
       # Left running, they hold enough heap that CodeQL's query evaluation --
