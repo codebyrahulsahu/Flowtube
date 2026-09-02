@@ -2855,13 +2855,23 @@ class EnhancedPlayerManager private constructor() {
             !currentHlsUrl.isNullOrEmpty()
 
     /**
+     * Whether the player actually has a video track selected. `hasExpectedVideoOutput()` only
+     * proves a video-capable source is loaded — audio-only HLS/DASH/local media would otherwise
+     * be mistaken for a black screen and get needlessly reattached/refreshed.
+     */
+    private fun hasSelectedVideoTrack(): Boolean =
+        player?.currentTracks?.groups?.any { it.type == C.TRACK_TYPE_VIDEO } == true
+
+    /**
      * Advance the black-screen watchdog by one step. Polled at a low frequency by
      * `BlackScreenRecoveryEffect` while the player screen is visible. When the policy decides to
      * escalate, the matching recovery is performed inline and the action is returned for logging.
      */
     fun evaluateBlackScreenRecovery(): BlackScreenRecoveryPolicy.Action {
         val p = player ?: return BlackScreenRecoveryPolicy.Action.NONE
-        if (!hasExpectedVideoOutput()) return BlackScreenRecoveryPolicy.Action.NONE
+        if (!hasExpectedVideoOutput() || !hasSelectedVideoTrack()) {
+            return BlackScreenRecoveryPolicy.Action.NONE
+        }
         val action =
             blackScreenRecoveryPolicy.evaluate(
                 videoId = currentVideoId,
@@ -2876,7 +2886,10 @@ class EnhancedPlayerManager private constructor() {
             BlackScreenRecoveryPolicy.Action.GIVE_UP -> {
                 Log.w(TAG, "Black-screen recovery exhausted for $currentVideoId — leaving error paths in charge")
                 PlayerDiagnostics.logWarning(TAG, "Black-screen recovery gave up video=$currentVideoId")
-                blackScreenRecoveryPolicy.reset(currentVideoId)
+                // Do NOT reset here: GAVE_UP is terminal for this media item, otherwise the
+                // watchdog would immediately re-arm and loop reattach→refresh→give-up forever.
+                // It re-arms only when the media changes (evaluate) or a new load resets it
+                // (resetPlaybackStateForNewVideo / stop / clearCurrentVideo).
             }
 
             BlackScreenRecoveryPolicy.Action.NONE -> Unit
