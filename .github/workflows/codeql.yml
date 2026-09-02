@@ -41,6 +41,7 @@ jobs:
       security-events: write
       actions: read
       contents: read
+      pull-requests: write
 
     steps:
       - name: Checkout code
@@ -73,9 +74,8 @@ jobs:
           build-mode: manual
 
       - name: Build for extraction
-        run: >
-          ./gradlew :app:assembleGithubDebug
-          --no-build-cache --stacktrace
+        run: |
+          ./gradlew :app:assembleGithubDebug --no-build-cache --stacktrace 2>&1 | tee /tmp/ci-assemble.log
 
       # The Gradle and Kotlin compile daemons stay resident after the build.
       # Left running, they hold enough heap that CodeQL's query evaluation --
@@ -86,6 +86,34 @@ jobs:
           ./gradlew --stop || true
           pkill -f KotlinCompileDaemon || true
           free -h || true
+
+      # Same log bridge as build.yml: surface the failing Gradle log tail.
+      - name: Report failure details
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -uo pipefail
+          f=$(ls -t /tmp/ci-*.log 2>/dev/null | head -1 || true)
+          [ -z "${f:-}" ] && exit 0
+          {
+            echo "### CodeQL CI failure: log tail"
+            echo
+            echo '```'
+            tail -n 150 "$f"
+            echo '```'
+          } > /tmp/ci-comment.md
+          if [ "$(wc -c < /tmp/ci-comment.md)" -gt 65000 ]; then
+            { echo "### CodeQL CI failure: log tail (truncated)"; echo; echo '```'; tail -c 60000 "$f"; echo '```'; } > /tmp/ci-comment.md
+          fi
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            pr_number=$(jq -r '.pull_request.number // empty' "$GITHUB_EVENT_PATH")
+            if [ -n "$pr_number" ]; then
+              gh pr comment "$pr_number" --body-file /tmp/ci-comment.md || true
+              exit 0
+            fi
+          fi
+          cat /tmp/ci-comment.md >> "$GITHUB_STEP_SUMMARY" || true
 
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v4
