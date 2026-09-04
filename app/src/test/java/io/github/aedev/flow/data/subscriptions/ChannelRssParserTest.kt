@@ -1,5 +1,6 @@
 package io.github.aedev.flow.data.subscriptions
 
+import io.github.aedev.flow.data.model.UNKNOWN_VIEW_COUNT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -86,6 +87,28 @@ class ChannelRssParserTest {
     @Test
     fun `view count is read from media statistics`() {
         assertEquals(4242L, entriesOf(feed("aaa")).single().viewCount)
+    }
+
+    @Test
+    fun `missing media statistics leave the view count unknown`() {
+        val xml =
+            buildString {
+                append("<?xml version=\"1.0\" encoding=\"UTF-8\"?>")
+                append(
+                    "<feed xmlns:yt=\"http://www.youtube.com/xml/schemas/2015\" " +
+                        "xmlns:media=\"http://search.yahoo.com/mrss/\" " +
+                        "xmlns=\"http://www.w3.org/2005/Atom\">",
+                )
+                append("<entry>")
+                append("<yt:videoId>aaa</yt:videoId>")
+                append("<title>Title aaa</title>")
+                append("<published>2026-05-01T12:00:00+00:00</published>")
+                append("<media:group><media:community/></media:group>")
+                append("</entry>")
+                append("</feed>")
+            }
+
+        assertEquals(UNKNOWN_VIEW_COUNT, entriesOf(xml).single().viewCount)
     }
 
     @Test

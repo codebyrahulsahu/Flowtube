@@ -1421,7 +1421,12 @@ fun ShortsCard(
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(
-                text = stringResource(R.string.views_template, formatViewCount(video.viewCount)),
+                text =
+                    if (video.viewCount >= 0L) {
+                        stringResource(R.string.views_template, formatViewCount(video.viewCount))
+                    } else {
+                        ""
+                    },
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.extendedColors.textSecondary,
                 modifier = Modifier.weight(1f),

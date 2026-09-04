@@ -1,6 +1,7 @@
 package io.github.aedev.flow.data.subscriptions
 
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.data.model.bestKnownViewCount
 import io.github.aedev.flow.utils.ThumbnailUrlResolver
 
 /**
@@ -79,7 +80,7 @@ object SubscriptionFeedMerger {
                 ?: primary.description
 
         return primary.copy(
-            viewCount = candidates.maxOf { it.viewCount },
+            viewCount = candidates.map { it.viewCount }.bestKnownViewCount(),
             thumbnailUrl = bestVideoThumbnail,
             uploadDate = if (hasStableMetadata) metadataSource.uploadDate else "",
             timestamp = metadataTimestamp ?: 0L,
@@ -101,7 +102,7 @@ object SubscriptionFeedMerger {
         if (prior == null) return this
         return copy(
             duration = if (duration > 0) duration else prior.duration,
-            viewCount = maxOf(viewCount, prior.viewCount),
+            viewCount = bestKnownViewCount(viewCount, prior.viewCount),
             thumbnailUrl =
                 ThumbnailUrlResolver.preferredVideoThumbnail(
                     videoId = id,

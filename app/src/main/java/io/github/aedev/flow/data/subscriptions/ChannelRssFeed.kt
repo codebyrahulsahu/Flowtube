@@ -1,12 +1,14 @@
 package io.github.aedev.flow.data.subscriptions
 
+import io.github.aedev.flow.data.model.UNKNOWN_VIEW_COUNT
+
 /** A single `<entry>` of a YouTube channel RSS feed. */
 data class ChannelRssEntry(
     val videoId: String,
     val title: String,
     val thumbnailUrl: String?,
     val publishedAtMillis: Long = 0L,
-    val viewCount: Long = 0L,
+    val viewCount: Long = UNKNOWN_VIEW_COUNT,
     val description: String? = null,
 )
 
