@@ -1199,11 +1199,12 @@ class EnhancedPlayerManager private constructor() {
     ): Boolean {
         autoNextLog("loadMediaInternal audioOnly=$audioOnly preserve=$preservePosition local=${localFilePath != null}")
         preload.clear()
-        if (audioOnly || audioOnlyMode.isActive) {
-            setVideoTracksDisabled(true)
-        } else if (videoStream != null || localFilePath != null) {
-            setVideoTracksDisabled(false)
-        }
+        setVideoTracksDisabled(
+            !VideoSurfacePolicy.shouldEnableVideoTracksOnLoad(
+                audioOnlyLoad = audioOnly,
+                audioOnlyModeActive = audioOnlyMode.isActive,
+            ),
+        )
 
         val sessionMetadata = GlobalPlayerState.currentVideo.value?.toVideoSessionMetadata()
 
@@ -2697,11 +2698,13 @@ class EnhancedPlayerManager private constructor() {
                         isLive = currentIsLiveStream,
                         playbackState = p.playbackState,
                     )
-            if (p != null && currentVideoStream != null) {
-                if (audioOnlyMode.isActive) {
-                    Log.d(TAG, "attachVideoSurface: was in audio-only mode — restoring video stream")
-                    restoreVideoOutput()
-                } else if (p.currentMediaItem == null) {
+            // Any video-capable source, not only one with an explicit stream: adaptive DASH/HLS/
+            // SABR sessions also come back from background and would otherwise stay audio-only.
+            if (p != null && audioOnlyMode.needsVideoRestore && hasExpectedVideoOutput()) {
+                Log.d(TAG, "attachVideoSurface: was in audio-only mode — restoring video output")
+                restoreVideoOutput()
+            } else if (p != null && currentVideoStream != null) {
+                if (p.currentMediaItem == null) {
                     Log.d(TAG, "attachVideoSurface: no media item — loading media now")
                     loadMediaInternal(currentVideoStream, currentAudioStream)
                 } else if (p.playbackState == Player.STATE_IDLE) {
@@ -2805,9 +2808,28 @@ class EnhancedPlayerManager private constructor() {
             return
         }
         autoNextLog("restoreVideoOutput")
+        // Bind the on-screen surface before the track type flips: the decoder created by the
+        // re-enable renders into whatever output it is handed at creation, and after a
+        // surfaceDestroyed that is still the placeholder. Rebinding also re-arms the
+        // black-screen watchdog for the first frame the new decoder owes us.
+        if (surfaceValid && surfaceManager?.reattachSurfaceIfValid(p) == true) {
+            pendingSurfaceFirstFrameStartedAtMs = SystemClock.elapsedRealtime()
+            lastRenderedFrameVideoId = null
+        }
         setVideoTracksDisabled(false)
         p.setWakeMode(androidx.media3.common.C.WAKE_MODE_LOCAL)
         resumePlaybackIfStalled(p)
+        if (p.currentMediaItem != null &&
+            VideoSurfacePolicy.shouldResyncOnVideoRestore(
+                playWhenReady = p.playWhenReady,
+                isLive = currentIsLiveStream,
+                playbackState = p.playbackState,
+            )
+        ) {
+            val position = p.currentPosition
+            Log.w("FlowVideoLifecycle", "videoRestoreResync video=$currentVideoId pos=$position")
+            p.seekTo(position)
+        }
     }
 
     private fun resumePlaybackIfStalled(p: Player?) {

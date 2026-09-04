@@ -1,6 +1,7 @@
 package io.github.aedev.flow.data.subscriptions
 
 import android.util.Log
+import io.github.aedev.flow.data.model.UNKNOWN_VIEW_COUNT
 import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
@@ -51,7 +52,7 @@ object ChannelRssParser {
             var thumbnail: String? = null
             var description: String? = null
             var publishedAt = 0L
-            var viewCount = 0L
+            var viewCount = UNKNOWN_VIEW_COUNT
 
             var eventType = parser.eventType
             while (eventType != XmlPullParser.END_DOCUMENT) {
@@ -66,7 +67,7 @@ object ChannelRssParser {
                             thumbnail = null
                             description = null
                             publishedAt = 0L
-                            viewCount = 0L
+                            viewCount = UNKNOWN_VIEW_COUNT
                         } else if (insideEntry) {
                             when {
                                 tagName.equals("videoId", ignoreCase = true) -> {
@@ -92,8 +93,12 @@ object ChannelRssParser {
                                     publishedAt = parseTimestamp(parser.nextText())
                                 }
 
-                                tagName.equals("statistics", ignoreCase = true) && viewCount == 0L -> {
-                                    viewCount = parser.getAttributeValue(null, "views")?.toLongOrNull() ?: 0L
+                                // Absent or unparsable statistics stay unknown: a 0 here would
+                                // be shown as "0 views" and win the merge over a real count.
+                                tagName.equals("statistics", ignoreCase = true) && viewCount < 0L -> {
+                                    viewCount =
+                                        parser.getAttributeValue(null, "views")?.toLongOrNull()
+                                            ?: UNKNOWN_VIEW_COUNT
                                 }
                             }
                         } else if (tagName.equals("name", ignoreCase = true) && channelName == null) {

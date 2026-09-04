@@ -111,4 +111,63 @@ class VideoSurfacePolicyTest {
             )
         ).isFalse()
     }
+
+    @Test
+    fun `paused playback resyncs when video output is restored`() {
+        // Re-enabling the video renderer while paused creates a decoder nothing feeds — the
+        // "audio but black until play/pause" report. A same-position seek pushes a frame through.
+        assertThat(
+            VideoSurfacePolicy.shouldResyncOnVideoRestore(
+                playWhenReady = false,
+                isLive = false,
+                playbackState = Player.STATE_READY
+            )
+        ).isTrue()
+    }
+
+    @Test
+    fun `playing and live restores are left alone`() {
+        assertThat(
+            VideoSurfacePolicy.shouldResyncOnVideoRestore(
+                playWhenReady = true,
+                isLive = false,
+                playbackState = Player.STATE_READY
+            )
+        ).isFalse()
+        assertThat(
+            VideoSurfacePolicy.shouldResyncOnVideoRestore(
+                playWhenReady = false,
+                isLive = true,
+                playbackState = Player.STATE_READY
+            )
+        ).isFalse()
+    }
+
+    @Test
+    fun `a normal load re-enables video tracks`() {
+        assertThat(
+            VideoSurfacePolicy.shouldEnableVideoTracksOnLoad(
+                audioOnlyLoad = false,
+                audioOnlyModeActive = false
+            )
+        ).isTrue()
+    }
+
+    @Test
+    fun `audio-only loads keep video tracks disabled`() {
+        assertThat(
+            VideoSurfacePolicy.shouldEnableVideoTracksOnLoad(
+                audioOnlyLoad = true,
+                audioOnlyModeActive = false
+            )
+        ).isFalse()
+        // A queue advance while backgrounded must stay audio-only or playback stalls on a
+        // surface that is not there.
+        assertThat(
+            VideoSurfacePolicy.shouldEnableVideoTracksOnLoad(
+                audioOnlyLoad = false,
+                audioOnlyModeActive = true
+            )
+        ).isFalse()
+    }
 }

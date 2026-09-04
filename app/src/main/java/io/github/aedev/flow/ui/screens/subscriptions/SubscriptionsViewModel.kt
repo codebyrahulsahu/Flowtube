@@ -12,6 +12,7 @@ import io.github.aedev.flow.data.local.dao.SubscriptionGroupDao
 import io.github.aedev.flow.data.local.entity.SubscriptionGroupEntity
 import io.github.aedev.flow.data.model.Channel
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.data.model.bestKnownViewCount
 import io.github.aedev.flow.data.subscriptions.SubscriptionFeedRepository
 import io.github.aedev.flow.data.subscriptions.SubscriptionRefreshPlan
 import io.github.aedev.flow.data.subscriptions.SubscriptionWatchedVideos
@@ -466,7 +467,7 @@ class SubscriptionsViewModel
                                             channelId = enriched.channelId.takeIf { it.isNotBlank() } ?: video.channelId,
                                             thumbnailUrl = enriched.thumbnailUrl.takeIf { it.isNotBlank() } ?: video.thumbnailUrl,
                                             duration = enriched.duration.takeIf { it > 0 } ?: video.duration,
-                                            viewCount = maxOf(video.viewCount, enriched.viewCount),
+                                            viewCount = bestKnownViewCount(video.viewCount, enriched.viewCount),
                                             isLive = video.isLive || enriched.isLive,
                                         )
                                     } ?: video

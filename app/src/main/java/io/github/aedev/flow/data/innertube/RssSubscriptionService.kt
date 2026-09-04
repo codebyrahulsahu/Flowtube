@@ -2,6 +2,8 @@ package io.github.aedev.flow.data.innertube
 
 import android.util.Log
 import io.github.aedev.flow.data.model.Video
+import io.github.aedev.flow.data.model.asKnownOrUnknownViewCount
+import io.github.aedev.flow.data.model.bestKnownViewCount
 import io.github.aedev.flow.data.shorts.ChannelReelIndex
 import io.github.aedev.flow.data.shorts.ShortsClassifier
 import io.github.aedev.flow.data.subscriptions.ChannelRssClient
@@ -251,7 +253,7 @@ class RssSubscriptionService
 
                     primary.copy(
                         duration = candidates.maxOf { it.duration },
-                        viewCount = candidates.maxOf { it.viewCount },
+                        viewCount = candidates.map { it.viewCount }.bestKnownViewCount(),
                         thumbnailUrl = bestVideoThumbnail,
                         uploadDate = timestampSource.uploadDate,
                         timestamp = timestampSource.timestamp,
@@ -549,7 +551,7 @@ class RssSubscriptionService
                 channelId = channelId,
                 thumbnailUrl = thumbnail,
                 duration = item.duration.toInt().coerceAtLeast(0),
-                viewCount = item.viewCount.coerceAtLeast(0L),
+                viewCount = item.viewCount.asKnownOrUnknownViewCount(),
                 uploadDate = uploadDateStr,
                 timestamp = uploadTimeMillis,
                 channelThumbnailUrl =

@@ -7,6 +7,7 @@ import io.github.aedev.flow.data.model.Comment
 import io.github.aedev.flow.data.model.Video
 import io.github.aedev.flow.data.model.VideoCollaborator
 import io.github.aedev.flow.data.model.needsCollaboratorResolution
+import io.github.aedev.flow.data.model.orUnknownViewCount
 import io.github.aedev.flow.data.shorts.ChannelReelIndex
 import io.github.aedev.flow.data.shorts.ShortsClassifier
 import io.github.aedev.flow.innertube.YouTube
@@ -1676,7 +1677,7 @@ internal object WatchMetadataVideoMapper {
                     cv.thumbnail?.bestUrl()?.let { ThumbnailUrlResolver.normalizeVideoThumbnail(id, it) }
                         ?: ThumbnailUrlResolver.buildHighQualityYoutubeThumbnail(id),
                 duration = if (isLive) 0 else parseDurationTextToSeconds(cv.lengthText?.text()),
-                viewCount = parseAbbreviatedCount(viewText) ?: 0L,
+                viewCount = parseAbbreviatedCount(viewText).orUnknownViewCount(),
                 uploadDate = uploadDateText,
                 // Video.timestamp defaults to now(), which made every related item
                 // look brand new — defeating the age filter and shorts-shelf sort.
