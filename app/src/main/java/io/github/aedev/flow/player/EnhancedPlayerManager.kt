@@ -46,7 +46,6 @@ import io.github.aedev.flow.player.media.MediaLoader
 import io.github.aedev.flow.player.preload.GaplessPreloadController
 import io.github.aedev.flow.player.preload.PreloadTarget
 import io.github.aedev.flow.player.quality.QualityManager
-import io.github.aedev.flow.player.recovery.BlackScreenRecoveryPolicy
 import io.github.aedev.flow.player.recovery.ClearedMediaRecoveryState
 import io.github.aedev.flow.player.sabr.integration.SabrStreamInfo
 import io.github.aedev.flow.player.sabr.integration.SabrUrlResolver
@@ -169,12 +168,6 @@ class EnhancedPlayerManager private constructor() {
     private var currentLocalFilePath: String? = null
     private val clearedMediaRecoveryState = ClearedMediaRecoveryState()
     private var pendingSurfaceFirstFrameStartedAtMs = 0L
-
-    // Black-screen watchdog: tracks whether the current media item has produced a frame since the
-    // last media load / surface reattach / stream refresh, and the escalation policy that turns a
-    // READY-but-frameless player back into a rendering one.
-    @Volatile private var lastRenderedFrameVideoId: String? = null
-    private val blackScreenRecoveryPolicy = BlackScreenRecoveryPolicy()
 
     // Queue management
     private val queue = PlaybackQueueController()
@@ -820,7 +813,6 @@ class EnhancedPlayerManager private constructor() {
 
                 override fun onRenderedFirstFrame() {
                     Log.d(TAG, "First frame rendered - video renderer working")
-                    lastRenderedFrameVideoId = currentVideoId
                     surfaceManager?.setSurfaceReady(true)
                     pendingSurfaceFirstFrameStartedAtMs.takeIf { it > 0L }?.let { startedAtMs ->
                         pendingSurfaceFirstFrameStartedAtMs = 0L
@@ -1087,8 +1079,6 @@ class EnhancedPlayerManager private constructor() {
         sabrPreferred = false
         currentLocalFilePath = null
         clearedMediaRecoveryState.clear()
-        lastRenderedFrameVideoId = null
-        blackScreenRecoveryPolicy.reset(videoId)
         innerTubeVideoFormats = emptyList()
         innerTubeAudioFormats = emptyList()
         currentVideoStream = null
@@ -1982,7 +1972,6 @@ class EnhancedPlayerManager private constructor() {
         currentIsLiveStream = false
         pendingInitialLiveEdgeSeek = false
         currentVideoId = data.enrichedVideo.id
-        lastRenderedFrameVideoId = null
 
         availableVideoStreams = StreamProcessor.processVideoStreams(data.videoStreams)
         availableAudioStreams = StreamProcessor.processAudioStreams(data.audioStreams)
@@ -2263,8 +2252,6 @@ class EnhancedPlayerManager private constructor() {
         preload.clear()
         currentLocalFilePath = null
         clearedMediaRecoveryState.clear()
-        lastRenderedFrameVideoId = null
-        blackScreenRecoveryPolicy.reset(null)
         audioOnlyMode.reset()
         pendingInitialLiveEdgeSeek = false
         setVideoTracksDisabled(false)
@@ -2679,9 +2666,6 @@ class EnhancedPlayerManager private constructor() {
         if (attached == true) {
             if (!wasSurfaceValid) {
                 pendingSurfaceFirstFrameStartedAtMs = SystemClock.elapsedRealtime()
-                // A (re)attached surface has to render a fresh first frame; arm the black-screen
-                // watchdog so a stale codec/surface pair that stays dark is detected and recovered.
-                lastRenderedFrameVideoId = null
                 Log.w(
                     "FlowVideoLifecycle",
                     "surfaceAttached video=$currentVideoId pos=${player?.currentPosition} " +
@@ -2841,103 +2825,6 @@ class EnhancedPlayerManager private constructor() {
         }
     }
 
-    // ===== Black-Screen Watchdog =====
-
-    private fun hasRenderedCurrentFrame(): Boolean =
-        currentVideoId != null && lastRenderedFrameVideoId == currentVideoId
-
-    /** Whether the current item is expected to produce video at all (audio-only content won't). */
-    private fun hasExpectedVideoOutput(): Boolean =
-        currentVideoStream != null ||
-            currentLocalFilePath != null ||
-            currentSabrInfo != null ||
-            !currentDashManifestUrl.isNullOrEmpty() ||
-            !currentHlsUrl.isNullOrEmpty()
-
-    /**
-     * Whether the player actually has a video track selected. `hasExpectedVideoOutput()` only
-     * proves a video-capable source is loaded — audio-only HLS/DASH/local media would otherwise
-     * be mistaken for a black screen and get needlessly reattached/refreshed.
-     */
-    private fun hasSelectedVideoTrack(): Boolean =
-        player?.currentTracks?.groups?.any { it.type == C.TRACK_TYPE_VIDEO } == true
-
-    /**
-     * Advance the black-screen watchdog by one step. Polled at a low frequency by
-     * `BlackScreenRecoveryEffect` while the player screen is visible. When the policy decides to
-     * escalate, the matching recovery is performed inline and the action is returned for logging.
-     */
-    fun evaluateBlackScreenRecovery(): BlackScreenRecoveryPolicy.Action {
-        val p = player ?: return BlackScreenRecoveryPolicy.Action.NONE
-        if (!hasExpectedVideoOutput() || !hasSelectedVideoTrack()) {
-            return BlackScreenRecoveryPolicy.Action.NONE
-        }
-        val action =
-            blackScreenRecoveryPolicy.evaluate(
-                videoId = currentVideoId,
-                playbackState = p.playbackState,
-                playWhenReady = p.playWhenReady,
-                firstFrameRendered = hasRenderedCurrentFrame(),
-                audioOnly = audioOnlyMode.isActive || audioOnlyMode.tracksDisabled,
-            )
-        when (action) {
-            BlackScreenRecoveryPolicy.Action.REATTACH_SURFACE -> recoverBlackScreenByReattachingSurface()
-            BlackScreenRecoveryPolicy.Action.REFRESH_STREAM -> recoverBlackScreenByRefreshingStream()
-            BlackScreenRecoveryPolicy.Action.GIVE_UP -> {
-                Log.w(TAG, "Black-screen recovery exhausted for $currentVideoId — leaving error paths in charge")
-                PlayerDiagnostics.logWarning(TAG, "Black-screen recovery gave up video=$currentVideoId")
-                // Do NOT reset here: GAVE_UP is terminal for this media item, otherwise the
-                // watchdog would immediately re-arm and loop reattach→refresh→give-up forever.
-                // It re-arms only when the media changes (evaluate) or a new load resets it
-                // (resetPlaybackStateForNewVideo / stop / clearCurrentVideo).
-            }
-
-            BlackScreenRecoveryPolicy.Action.NONE -> Unit
-        }
-        return action
-    }
-
-    private fun recoverBlackScreenByReattachingSurface() {
-        val holder = surfaceManager?.getSurfaceHolder()
-        if (holder == null) {
-            Log.w(TAG, "Black-screen recovery: no surface holder to reattach (video=$currentVideoId)")
-            return
-        }
-        Log.w(TAG, "Black-screen recovery: READY with no frame for $currentVideoId — reattaching surface")
-        PlayerDiagnostics.logWarning(
-            TAG,
-            "Black screen (READY, no first frame) — reattaching surface video=$currentVideoId",
-        )
-        detachVideoSurface(holder)
-        attachVideoSurface(holder, forceAttach = true)
-    }
-
-    private fun recoverBlackScreenByRefreshingStream() {
-        val position = player?.currentPosition ?: 0L
-        val shouldPlay = player?.playWhenReady ?: true
-        Log.w(TAG, "Black-screen recovery: surface reattach failed for $currentVideoId — refreshing stream at ${position}ms")
-        PlayerDiagnostics.logWarning(
-            TAG,
-            "Black screen persisted after surface reattach — refreshing stream video=$currentVideoId pos=$position",
-        )
-        player?.stop()
-        player?.clearMediaItems()
-        lastRenderedFrameVideoId = null
-        // Pass the local file path through: prepareMediaSource treats a null localFilePath as a
-        // YouTube load and returns false for local media (no InnerTube/SABR state), which would
-        // otherwise leave the player stopped and cleared instead of recovered.
-        val loaded =
-            loadMediaInternal(
-                currentVideoStream,
-                currentAudioStream,
-                position,
-                localFilePath = currentLocalFilePath,
-            )
-        if (loaded) {
-            player?.playWhenReady = shouldPlay
-        }
-    }
-
     // ===== Cache & Background Service =====
 
     fun getCacheSize(): Long = cacheManager?.getCacheSize() ?: 0L
@@ -2996,9 +2883,6 @@ class EnhancedPlayerManager private constructor() {
         currentAudioStream = null
         currentLocalFilePath = null
         clearedMediaRecoveryState.clear()
-        lastRenderedFrameVideoId = null
-        blackScreenRecoveryPolicy.reset(null)
-        errorHandler?.resetExpiryCounter()
         _playerState.value =
             _playerState.value.copy(
                 isPlaying = false,
@@ -3104,7 +2988,6 @@ class EnhancedPlayerManager private constructor() {
         Log.d(TAG, "Reloading ${VideoCodecUtils.qualityHeightFromStream(video)}p at ${pos}ms ($reason)")
         player?.stop()
         player?.clearMediaItems()
-        lastRenderedFrameVideoId = null
         loadMediaInternal(video, audio, pos)
     }
 

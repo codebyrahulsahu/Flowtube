@@ -493,8 +493,6 @@ fun GlobalPlayerOverlay(
         lifecycleOwner = lifecycleOwner,
     )
 
-    BlackScreenRecoveryEffect(isPlaying = playerState.playWhenReady)
-
     AutoHideControlsEffect(
         showControls = screenState.showControls,
         isPlaying = playerState.playWhenReady,
