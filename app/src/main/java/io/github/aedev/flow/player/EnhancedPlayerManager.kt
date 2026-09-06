@@ -2673,8 +2673,12 @@ class EnhancedPlayerManager private constructor() {
                 )
             }
             val p = player
+            // Resync on every (re)bind driven by a surface lifecycle callback (forceAttach), not
+            // only when wasSurfaceValid was false: a reused-but-replaced buffer queue keeps
+            // wasSurfaceValid true while the codec is already outputting into a dead queue.
             val resyncPausedVideo =
-                p != null && !wasSurfaceValid && !audioOnlyMode.isActive &&
+                forceAttach &&
+                    p != null && !audioOnlyMode.isActive &&
                     p.currentMediaItem != null &&
                     VideoSurfacePolicy.shouldResyncOnSurfaceReattach(
                         playWhenReady = p.playWhenReady,
@@ -2716,6 +2720,40 @@ class EnhancedPlayerManager private constructor() {
                 "surfaceDetached video=$currentVideoId pos=${player?.currentPosition} pwr=${player?.playWhenReady}",
             )
         }
+    }
+
+    /**
+     * Re-draws the playhead frame after returning to the foreground.
+     *
+     * A (re)created SurfaceView is black until the video renderer draws a frame onto it, and a
+     * paused player draws no frames at all — so when the surface was recycled while backgrounded
+     * (or, on some OEMs, screen-off/on happens without any surface callback reaching the holder),
+     * the player comes back showing a black screen while audio is fine. A same-position seek
+     * flushes the video codec and renders the playhead frame onto the current surface, which is
+     * what manually pressing play/pause used to do for users.
+     *
+     * @return true when a resync seek was issued.
+     */
+    fun resyncPausedVideoOnResume(): Boolean {
+        val p = player ?: return false
+        if (audioOnlyMode.isActive || p.currentMediaItem == null) return false
+        if (surfaceManager?.isSurfaceValid() != true) return false
+        if (
+            !VideoSurfacePolicy.shouldResyncOnSurfaceReattach(
+                playWhenReady = p.playWhenReady,
+                isLive = currentIsLiveStream,
+                playbackState = p.playbackState,
+            )
+        ) {
+            return false
+        }
+        val position = p.currentPosition
+        Log.w(
+            "FlowVideoLifecycle",
+            "resumeResync video=$currentVideoId pos=$position",
+        )
+        p.seekTo(position)
+        return true
     }
 
     suspend fun awaitSurfaceReady(timeoutMillis: Long = 1000) = surfaceManager?.awaitSurfaceReady(timeoutMillis) ?: false

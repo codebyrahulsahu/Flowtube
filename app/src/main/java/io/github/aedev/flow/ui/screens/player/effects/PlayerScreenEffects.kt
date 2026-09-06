@@ -326,6 +326,10 @@ fun PlaybackRefocusEffect(
             mgr.restoreVideoOutput()
         }
         if (mgr.recoverClearedMediaAfterForeground()) return@LaunchedEffect
+        // A paused player on a (re)created surface renders no frame onto it; make it draw the
+        // playhead frame now so foregrounding never shows a black screen (covers OEMs whose
+        // screen-off/on delivers no surface callback for the attach-time resync to latch onto).
+        mgr.resyncPausedVideoOnResume()
 
         delay(150L)
 

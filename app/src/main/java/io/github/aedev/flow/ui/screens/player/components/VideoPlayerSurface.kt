@@ -103,7 +103,16 @@ fun VideoPlayerSurface(
         val callback =
             object : SurfaceHolder.Callback {
                 override fun surfaceCreated(holder: SurfaceHolder) {
-                    attachIfValid(holder)
+                    // Force-rebind on every (re)creation, bypassing the object-identity dedup
+                    // in attachIfValid: Android may hand back the same SurfaceHolder/Surface
+                    // Java objects while replacing the underlying native buffer queue, so an
+                    // identical-looking surface does not prove the codec's output is still live.
+                    // A freshly created SurfaceView is black until a frame is drawn onto it.
+                    val surface = holder.surface
+                    if (!surface.isValid) return
+                    attachedHolder = holder
+                    attachedSurface = surface
+                    manager.attachVideoSurface(holder, forceAttach = true)
                 }
 
                 override fun surfaceChanged(
