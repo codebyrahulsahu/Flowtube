@@ -88,6 +88,7 @@ import io.github.aedev.flow.ui.screens.player.components.PlayerSettingsPage
 import io.github.aedev.flow.ui.screens.player.components.SettingsMenuDialog
 import io.github.aedev.flow.ui.screens.player.components.SponsorBlockSkipButton
 import io.github.aedev.flow.ui.screens.player.components.VideoPlayerSurface
+import io.github.aedev.flow.ui.screens.player.components.WebViewPlayerSurface
 import io.github.aedev.flow.ui.screens.player.components.resolvePlayerQualityLabel
 import io.github.aedev.flow.ui.screens.player.components.videoPlayerControls
 import io.github.aedev.flow.ui.screens.player.components.videoPlayerZoom
@@ -185,6 +186,10 @@ fun GlobalPlayerOverlay(
     val groupedQualitySelectorEnabled by playerPreferences.groupedQualitySelectorEnabled.collectAsState(initial = false)
     val lockModeEnabled by playerPreferences.overlayLockModeEnabled.collectAsState(initial = false)
     val commentsEnabled by playerPreferences.commentsEnabled.collectAsState(initial = true)
+    val webViewPlayerEnabled by playerPreferences.webViewPlayerEnabled.collectAsState(initial = false)
+    // In WebView mode we use YouTube's HTML5 controls inside the WebView. The native ExoPlayer
+    // surface, gesture overlays, and premium controls are all skipped so touches go to the iframe.
+    val isWebViewMode = webViewPlayerEnabled && !video.id.startsWith("local_")
     val preferredSubtitleLanguage by playerPreferences.preferredSubtitleLanguage
         .collectAsState(initial = CaptionTrackResolver.NO_PREFERRED_LANGUAGE)
     val autoEnableSubtitles by playerPreferences.autoEnableSubtitles.collectAsState(initial = false)
@@ -615,7 +620,7 @@ fun GlobalPlayerOverlay(
     )
 
     KeepScreenOnEffect(
-        isPlaying = playerState.playWhenReady && !playerState.hasEnded,
+        isPlaying = (playerState.playWhenReady || isWebViewMode) && !playerState.hasEnded,
         activity = activity,
         lifecycleOwner = lifecycleOwner,
     )
@@ -897,7 +902,7 @@ fun GlobalPlayerOverlay(
             videoContent = { modifier ->
                 // ALWAYS use the same video surface
                 val gestureModifier =
-                    if (!isMinimized && !localIsInPipMode && !screenState.isTouchLocked) {
+                    if (!isWebViewMode && !isMinimized && !localIsInPipMode && !screenState.isTouchLocked) {
                         modifier
                             .videoPlayerControls(
                                 isSpeedBoostActive = screenState.isSpeedBoostActive,
@@ -989,20 +994,38 @@ fun GlobalPlayerOverlay(
                                     }
                                 },
                     ) {
-                        VideoPlayerSurface(
-                            video = video,
-                            resizeMode = screenState.resizeMode,
-                            modifier = Modifier.fillMaxSize(),
-                            onVideoAspectRatioChanged = { decodedVideoAspectRatio = it },
-                            cornerRadiusDp =
-                                if (isMinimized && !localIsInPipMode) {
-                                    12f / playerSheetState.miniVisualScale
-                                } else {
-                                    0f
-                                },
-                            ambientMode = ambientModeEnabled && !isMinimized && !localIsInPipMode,
-                        )
-                        if (!isMinimized && !localIsInPipMode) {
+                        if (isWebViewMode) {
+                            // Brave-style WebView YouTube player: DRM-safe fallback that uses the
+                            // system WebView's Widevine pipeline to play m.youtube.com/embed without
+                            // the black-screen issues ExoPlayer can hit on some DRM/codec combos.
+                            // Pause the native ExoPlayer so audio doesn't double up.
+                            LaunchedEffect(video.id, webViewPlayerEnabled) {
+                                val mgr = EnhancedPlayerManager.getInstance()
+                                if (playerState.isPlaying) {
+                                    mgr.pause()
+                                }
+                            }
+                            WebViewPlayerSurface(
+                                video = video,
+                                modifier = Modifier.fillMaxSize(),
+                                autoplay = true,
+                            )
+                        } else {
+                            VideoPlayerSurface(
+                                video = video,
+                                resizeMode = screenState.resizeMode,
+                                modifier = Modifier.fillMaxSize(),
+                                onVideoAspectRatioChanged = { decodedVideoAspectRatio = it },
+                                cornerRadiusDp =
+                                    if (isMinimized && !localIsInPipMode) {
+                                        12f / playerSheetState.miniVisualScale
+                                    } else {
+                                        0f
+                                    },
+                                ambientMode = ambientModeEnabled && !isMinimized && !localIsInPipMode,
+                            )
+                        }
+                        if (!isWebViewMode && !isMinimized && !localIsInPipMode) {
                             Media3SubtitleOverlay(
                                 enabled = screenState.subtitlesEnabled,
                                 isAutoGenerated =
@@ -1013,7 +1036,7 @@ fun GlobalPlayerOverlay(
                                 modifier = Modifier.fillMaxSize(),
                             )
                         }
-                        if (playerUiState.isRestoredSession) {
+                        if (!isWebViewMode && playerUiState.isRestoredSession) {
                             val thumbUrl =
                                 video.thumbnailUrl.takeIf { it.isNotEmpty() }
                                     ?: "https://i.ytimg.com/vi/${video.id}/hq720.jpg"
@@ -1038,7 +1061,7 @@ fun GlobalPlayerOverlay(
                     } // end zoomable layer
 
                     // Non-zoomable UI overlays (always at full-screen position)
-                    if (!isMinimized && !localIsInPipMode) {
+                    if (!isWebViewMode && !isMinimized && !localIsInPipMode) {
                         PlayerGestureOverlays(
                             screenState = screenState,
                             allowVolumeBoost = allowVolumeBoost,
@@ -1120,7 +1143,7 @@ fun GlobalPlayerOverlay(
 
                     // Controls overlay - fully expanded only
                     var showRemainingTime by rememberSaveable { mutableStateOf(false) }
-                    if (!playerUiState.isUpcoming && !isMinimized && !localIsInPipMode) {
+                    if (!isWebViewMode && !playerUiState.isUpcoming && !isMinimized && !localIsInPipMode) {
                         val controlsShown = screenState.showControls || screenState.isTouchLocked
                         val bufferedFraction =
                             (
