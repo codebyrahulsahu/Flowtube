@@ -2766,4 +2766,7 @@
     <string name="remove_from_queue">Remove from queue</string>
     <string name="remove_from_queue_confirmation">Are you sure you want to remove this video from the queue?</string>
     <string name="reorder_queue_item">Reorder queue item</string>
+    <string name="player_settings_webview_player_title">Brave WebView Player</string>
+    <string name="player_settings_webview_player_subtitle">Play videos through the Android system WebView (like Brave browser). Fixes black-screen issues on DRM/codec-problematic devices but disables native controls, SponsorBlock, PiP, and background playback.</string>
+    <string name="player_webview_mode_badge">WebView</string>
 </resources>

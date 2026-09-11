@@ -335,6 +335,9 @@ class PlayerPreferences(
         // Shorts playback speed: remembered across sessions
         val SHORTS_PLAYBACK_SPEED = floatPreferencesKey("shorts_playback_speed")
 
+        // Brave-style WebView YouTube player fallback (bypasses black screen on DRM/codec issues)
+        val WEBVIEW_PLAYER_ENABLED = booleanPreferencesKey("webview_player_enabled")
+
         // Date & time display
         val DATE_DISPLAY_MODE = stringPreferencesKey("date_display_mode")
         val DATE_FORMAT_STYLE = stringPreferencesKey("date_format_style")
@@ -366,6 +369,19 @@ class PlayerPreferences(
     suspend fun setAllowVolumeBoost(enabled: Boolean) {
         context.playerPreferencesDataStore.edit { preferences ->
             preferences[Keys.ALLOW_VOLUME_BOOST] = enabled
+        }
+    }
+
+    // ── Brave-style WebView YouTube player (bypasses ExoPlayer black screen via system WebView DRM) ──
+    val webViewPlayerEnabled: Flow<Boolean> =
+        context.playerPreferencesDataStore.data
+            .map { preferences ->
+                preferences[Keys.WEBVIEW_PLAYER_ENABLED] ?: false
+            }
+
+    suspend fun setWebViewPlayerEnabled(enabled: Boolean) {
+        context.playerPreferencesDataStore.edit { preferences ->
+            preferences[Keys.WEBVIEW_PLAYER_ENABLED] = enabled
         }
     }
 

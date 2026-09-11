@@ -194,6 +194,7 @@ fun PlayerSettingsScreen(onNavigateBack: () -> Unit) {
     val miniPlayerContinueWatchingEnabled by playerPreferences.miniPlayerContinueWatchingEnabled.collectAsState(initial = true)
     val videoLoopEnabled by playerPreferences.videoLoopEnabled.collectAsState(initial = false)
     val rememberPlaybackSpeed by playerPreferences.rememberPlaybackSpeed.collectAsState(initial = false)
+    val webViewPlayerEnabled by playerPreferences.webViewPlayerEnabled.collectAsState(initial = false)
 
     var showAudioLanguageDialog by remember { mutableStateOf(false) }
     var showSubtitleLanguageDialog by remember { mutableStateOf(false) }
@@ -604,6 +605,7 @@ fun PlayerSettingsScreen(onNavigateBack: () -> Unit) {
                         onClick = { showVideoCodecDialog = true },
                     )
                     if (defaultVideoCodec != VideoCodec.AUTO) {
+                        HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
                         SettingsClickItem(
                             icon = Icons.Outlined.SwapHoriz,
                             title = stringResource(R.string.player_settings_video_codec_fallback),
@@ -616,6 +618,14 @@ fun PlayerSettingsScreen(onNavigateBack: () -> Unit) {
                             onClick = { showFallbackVideoCodecDialog = true },
                         )
                     }
+                    HorizontalDivider(Modifier.padding(start = 56.dp), color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                    SettingsSwitchItem(
+                        icon = Icons.Outlined.Public,
+                        title = stringResource(R.string.player_settings_webview_player_title),
+                        subtitle = stringResource(R.string.player_settings_webview_player_subtitle),
+                        checked = webViewPlayerEnabled,
+                        onCheckedChange = { coroutineScope.launch { playerPreferences.setWebViewPlayerEnabled(it) } },
+                    )
                 }
             }
 
